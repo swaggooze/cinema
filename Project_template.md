@@ -476,6 +476,14 @@ You can see 21 for the upstream_rq_pending_overflow value which means 21 calls s
 
 Приложите скриншот работы circuit breaker'а
 
+**Решение.** [circuit-breaker-config.yaml](src/kubernetes/circuit-breaker-config.yaml) содержит `DestinationRule` для `movies-service` и `monolith`: `connectionPool` ограничивает параллельные запросы, а `outlierDetection` исключает из балансировки поды с ошибками 5xx. Лимиты намеренно минимальные, чтобы срабатывание было видно в тесте.
+
+Результат для `movies-service`: из 500 запросов 487 получили код 503, и счётчик `upstream_rq_pending_overflow` тоже равен 487. Именно этот счётчик показывает срабатывания, а `upstream_rq_pending_total` считает запросы, прошедшие через очередь. Для `monolith` код 503 получили 489 запросов. После установки Istio тесты Postman через ingress снова прошли без ошибок.
+
+![Circuit Breaker для movies-service](docs/screenshots/task5-circuit-breaker.png)
+
+![Circuit Breaker для monolith](docs/screenshots/task5-circuit-breaker-monolith.png)
+
 Удаляем все
 ```bash
 istioctl uninstall --purge
