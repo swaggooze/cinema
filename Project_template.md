@@ -408,6 +408,8 @@ https://cinemaabyss.example.com/api/movies
 - в `ConfigMap` не было `EVENTS_SERVICE_URL` и `KAFKA_BROKERS`;
 - Ingress задавал одновременно `ingressClassName` и аннотацию `kubernetes.io/ingress.class`, а Kubernetes такое отклоняет.
 
+![Развёртывание Helm и вывод /api/movies](docs/screenshots/task4-helm-install.png)
+
 
 # Задание 5
 Компания планирует активно развиваться и для повышения надежности, безопасности, реализации сетевых паттернов типа Circuit Breaker и канареечного деплоя вам как архитектору необходимо развернуть istio и настроить circuit breaker для monolith и movies сервисов.
