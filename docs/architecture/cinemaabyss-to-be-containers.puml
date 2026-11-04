@@ -1,0 +1,103 @@
+@startuml cinemaabyss-to-be-containers
+!include <C4/C4_Container>
+
+LAYOUT_TOP_DOWN()
+
+title КиноБездна: To-Be архитектура (C4, уровень контейнеров)
+
+AddElementTag("legacy", $bgColor="#8a6d3b", $legendText="монолит: уходит по Strangler Fig")
+AddElementTag("done", $bgColor="#2e7d32", $legendText="реализовано в этом проекте")
+AddElementTag("extracted", $bgColor="#00838f", $legendText="уже выделен, но работает с общей БД")
+AddRelTag("transition", $lineStyle=DashedLine(), $legendText="временная связь на период перехода")
+
+Person(viewer, "Зритель", "Смотрит фильмы, оценивает их, ведёт избранное и оплачивает подписку")
+
+System_Boundary(cinema, "КиноБездна (Kubernetes, Istio)") {
+    Container(clients, "Клиентские приложения", "Web, iOS/Android, Smart TV", "Интерфейсы зрителя на разных устройствах")
+
+    Container(bff, "BFF", "Go, REST", "Отдельный фасад на тип клиента: состав и объём данных под устройство")
+    Container(gateway, "API Gateway (proxy-service)", "Go, REST", "Единая точка входа. Готово: маршрутизация, Feature Flag и процент миграции. Цель: проверка JWT", $tags="done")
+
+    Boundary(identity, "Домен: пользователи") {
+        Container(users, "User Service", "Go, REST", "Регистрация, вход, выдача JWT, профиль")
+        ContainerDb(usersDb, "Users DB", "PostgreSQL", "Пользователи")
+    }
+
+    Boundary(catalog, "Домен: каталог") {
+        Container(movies, "Movies Service", "Go, REST", "Метаданные: жанры, актёры, оценки, избранное", $tags="extracted")
+        ContainerDb(moviesDb, "Movies DB", "PostgreSQL", "Метаданные фильмов")
+    }
+
+    Boundary(streaming, "Домен: просмотр") {
+        Container(video, "Streaming Service", "Go, REST", "Доступ к видео и история просмотров")
+        ContainerDb(videoDb, "Video Storage", "S3 + CDN", "Видеофайлы")
+    }
+
+    Boundary(billing, "Домен: биллинг") {
+        Container(subscriptions, "Subscription Service", "Go, REST", "Подписки и скидки")
+        ContainerDb(subscriptionsDb, "Subscriptions DB", "PostgreSQL", "Подписки, скидки")
+        Container(payments, "Payment Service", "Go, REST", "Платежи и статусы оплат")
+        ContainerDb(paymentsDb, "Payments DB", "PostgreSQL", "Платежи")
+    }
+
+    Boundary(integration, "Домен: интеграции") {
+        Container(recommendations, "Recommendation Adapter", "Go", "Anti-Corruption Layer к рекомендательной системе")
+        Container(partners, "Partner Adapter", "Go", "Anti-Corruption Layer к лояльности и маркетплейсам")
+    }
+
+    Boundary(eventing, "Домен: события") {
+        Container(events, "Events Service", "Go, Kafka producer/consumer", "API публикации и обработка событий", $tags="done")
+        ContainerQueue(kafka, "Kafka", "Топики movie-events, user-events, payment-events", "Асинхронный обмен между доменами")
+    }
+
+    Container(monolith, "Монолит", "Go", "Домены, которые ещё не выделены", $tags="legacy")
+    ContainerDb(monolithDb, "Общая БД монолита", "PostgreSQL", "Данные, которые ещё не перенесены", $tags="legacy")
+}
+
+System_Ext(recSystem, "Рекомендательная система", "Сторонний сервис подборок")
+System_Ext(paymentSystems, "Платёжные системы", "Приём оплаты")
+System_Ext(partnerSystems, "Сервисы лояльности и маркетплейсы", "Партнёрские программы")
+System_Ext(contentSources, "Сервисы и открытые источники контента", "Откуда агрегируется видео")
+
+Rel(viewer, clients, "Использует")
+Rel(clients, bff, "Запросы", "HTTPS/REST")
+Rel(bff, gateway, "Запросы", "REST")
+
+Rel(gateway, users, "Регистрация, вход, ключи проверки JWT", "REST")
+Rel(gateway, movies, "Фильмы: доля из MOVIES_MIGRATION_PERCENT", "REST")
+Rel(gateway, video, "Просмотр", "REST")
+Rel(gateway, subscriptions, "Подписки", "REST")
+Rel(gateway, payments, "Платежи", "REST")
+Rel(gateway, events, "Создание событий", "REST")
+Rel(gateway, monolith, "Всё, что ещё не выделено", "REST")
+
+Rel(users, usersDb, "Читает и пишет", "SQL")
+Rel(movies, moviesDb, "Читает и пишет", "SQL")
+Rel(video, videoDb, "Читает", "S3 API")
+Rel(subscriptions, subscriptionsDb, "Читает и пишет", "SQL")
+Rel(payments, paymentsDb, "Читает и пишет", "SQL")
+Rel(monolith, monolithDb, "Читает и пишет", "SQL")
+Rel(movies, monolithDb, "Сейчас: общая БД, потом перенос в Movies DB", "SQL", $tags="transition")
+
+Rel(events, kafka, "Публикует и читает", "Kafka")
+Rel(users, kafka, "Публикует", "Kafka")
+Rel(movies, kafka, "Публикует", "Kafka")
+Rel(video, kafka, "Публикует просмотры", "Kafka")
+Rel(payments, kafka, "Публикует статусы оплат", "Kafka")
+Rel(kafka, subscriptions, "Статусы оплат", "Kafka")
+Rel(kafka, recommendations, "События просмотров и оценок", "Kafka")
+Rel(kafka, partners, "События оплат и подписок", "Kafka")
+
+Rel(gateway, recommendations, "Подборки", "REST")
+Rel(recommendations, recSystem, "Данные и подборки", "HTTPS")
+Rel(payments, paymentSystems, "Проведение оплат", "HTTPS")
+Rel(partners, partnerSystems, "Начисления и заказы", "HTTPS")
+Rel(video, contentSources, "Получение контента", "HTTPS")
+
+Lay_D(paymentsDb, paymentSystems)
+Lay_R(payments, subscriptions)
+Lay_R(subscriptions, users)
+Lay_D(videoDb, contentSources)
+
+SHOW_LEGEND()
+@enduml

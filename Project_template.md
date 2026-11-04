@@ -5,7 +5,17 @@
 1. Спроектируйте to be архитектуру КиноБездны, разделив всю систему на отдельные домены и организовав интеграционное взаимодействие и единую точку вызова сервисов.
 Результат представьте в виде контейнерной диаграммы в нотации С4.
 Добавьте ссылку на файл в этот шаблон
-[ссылка на файл](ссылка)
+
+**Решение.** [C4-диаграмма контейнеров (PNG)](docs/architecture/cinemaabyss-to-be-containers.png), [исходник PlantUML](docs/architecture/cinemaabyss-to-be-containers.puml).
+
+![To-Be архитектура](docs/architecture/cinemaabyss-to-be-containers.png)
+
+- Единая точка вызова: API Gateway (`proxy-service`), перед ним BFF для разных типов клиентов. Все обращения к сервисам идут через шлюз.
+- Аутентификация: User Service выдаёт JWT, шлюз проверяет токен на входе. Это целевое состояние, сейчас прокси токены не проверяет.
+- Домены: пользователи, каталог, просмотр, биллинг, интеграции, события. У каждого домена своя база данных.
+- Синхронное взаимодействие идёт по REST, асинхронное через Kafka. Внешние системы подключаются через адаптеры (Anti-Corruption Layer).
+- Монолит остаётся за шлюзом, пока из него не выделены все домены (Strangler Fig).
+- Зелёным отмечено то, что реализовано в этом проекте, бирюзовым `movies-service`: он уже выделен командой, но пока работает с общей базой монолита (пунктирная связь). Перенос в Movies DB и публикация его событий в Kafka показывают целевое состояние. Коричневым отмечены монолит и его база.
 
 
 ## Задание 2
@@ -47,6 +57,19 @@
    ```
 - Протестируйте постепенный переход, изменив переменную окружения MOVIES_MIGRATION_PERCENT в файле docker-compose.yml.
 
+**Решение.** Сервис написан на Go: [src/microservices/proxy](src/microservices/proxy).
+
+| Путь | Куда идёт запрос                                                   |
+|---|--------------------------------------------------------------------|
+| `/health` | ответ самого прокси                                                |
+| `/api/events/*` | `events-service`                                                   |
+| `/api/movies/health` | `movies-service` (в монолите такого пути нет)                      |
+| `/api/movies` при `GRADUAL_MIGRATION=true` | `movies-service` с долей `MOVIES_MIGRATION_PERCENT` |
+| `/api/movies` при `GRADUAL_MIGRATION=false` | весь трафик в `movies-service`, как описано в README               |
+| всё остальное | монолит                                                            |
+
+Заголовок ответа `X-Upstream` показывает, какой сервис обработал запрос. Некорректный процент считается нулём, то есть трафик остаётся на монолите.
+
 ### 2. Kafka
  Вам как архитектуру нужно также проверить гипотезу насколько просто реализовать применение Kafka в данной архитектуре.
 
@@ -58,6 +81,25 @@
 
 Необходимые тесты для проверки этого API вызываются при запуске npm run test:local из папки tests/postman 
 Приложите скриншот тестов и скриншот состояния топиков Kafka http://localhost:8090 
+
+**Решение.** Сервис написан на Go с библиотекой Sarama: [src/microservices/events](src/microservices/events). 
+API соответствует `api-specification.yaml`: `POST /api/events/{movie,user,payment}` синхронно публикует событие в топик и возвращает партицию и смещение. 
+Consumer group `events-service` читает те же топики и пишет события в лог. 
+`GET /api/events/health` отвечает `200` только при готовых producer и consumer.
+
+Также изменено:
+- в `docker-compose.yml` монолит и `movies-service` ждут готовности PostgreSQL, потому что при недоступной базе они завершаются сразу при старте;
+- в Dockerfile монолита и `movies-service` копируется `go.sum`, чтобы зависимости проверялись по нему.
+
+Тесты Postman (Docker Compose): 22 запроса, 42 проверки, ошибок нет:
+
+![Тесты Postman](docs/screenshots/task2-postman-tests-1.png)
+
+![Тесты Postman](docs/screenshots/task2-postman-tests-2.png)
+
+![Топики Kafka](docs/screenshots/task2-kafka-topics.png)
+
+![Лог events-service](docs/screenshots/task2-events-log.png)
 
 
 ## Задание 3
@@ -109,6 +151,8 @@ jobs:
 ```
 Как только сборка отработает и в github registry появятся ваши образы, можно переходить к блоку настройки Kubernetes
 Успешным результатом данного шага является "зеленая" сборка и "зеленые" тесты
+
+**Решение.** В `docker-build-push.yml` и `api-tests.yml` добавлена ветка `cinema`, в `docker-build-push.yml` добавлены сборка и публикация образов `events-service` и `proxy-service`, а перед сборкой запускаются модульные тесты этих сервисов.
 
 
 ### Proxy в Kubernetes
@@ -274,6 +318,16 @@ cat .docker/config.json | base64
 #### Шаг 3
 Добавьте сюда скриншота вывода при вызове https://cinemaabyss.example.com/api/movies и  скриншот вывода event-service после вызова тестов.
 
+**Решение.** Манифесты: [events-service.yaml](src/kubernetes/events-service.yaml), [proxy-service.yaml](src/kubernetes/proxy-service.yaml), [ingress.yaml](src/kubernetes/ingress.yaml). В `configmap.yaml` добавлены `EVENTS_SERVICE_URL` и `KAFKA_BROKERS`.
+
+Тесты Postman через ingress: 22 запроса, 42 проверки, ошибок нет.
+
+![Вывод /api/movies](docs/screenshots/task3-k8s-movies.png)
+
+![Лог events-service](docs/screenshots/task3-k8s-events-log.png)
+
+![Тесты Postman в Kubernetes](docs/screenshots/task3-postman-tests.png)
+
 
 ## Задание 4
 Для простоты дальнейшего обновления и развертывания вам как архитектуру необходимо так же реализовать helm-чарты для прокси-сервиса и проверить работу 
@@ -349,6 +403,13 @@ minikube tunnel
 https://cinemaabyss.example.com/api/movies
 и приложите скриншот развертывания helm и вывода https://cinemaabyss.example.com/api/movies
 
+**Решение.** Заполнены шаблоны [proxy-service.yaml](src/kubernetes/helm/templates/services/proxy-service.yaml) и [events-service.yaml](src/kubernetes/helm/templates/services/events-service.yaml), в `values.yaml` указаны свои образы. Исправлены ошибки, которые мешали работе чарта:
+- `MOVIES_SERVICE_URL` указывал на несуществующий сервис `movies`;
+- в `ConfigMap` не было `EVENTS_SERVICE_URL` и `KAFKA_BROKERS`;
+- Ingress задавал одновременно `ingressClassName` и аннотацию `kubernetes.io/ingress.class`, а Kubernetes такое отклоняет.
+
+![Развёртывание Helm и вывод /api/movies](docs/screenshots/task4-helm-install.png)
+
 
 # Задание 5
 Компания планирует активно развиваться и для повышения надежности, безопасности, реализации сетевых паттернов типа Circuit Breaker и канареечного деплоя вам как архитектору необходимо развернуть istio и настроить circuit breaker для monolith и movies сервисов.
@@ -414,6 +475,14 @@ You can see 21 for the upstream_rq_pending_overflow value which means 21 calls s
 ```
 
 Приложите скриншот работы circuit breaker'а
+
+**Решение.** [circuit-breaker-config.yaml](src/kubernetes/circuit-breaker-config.yaml) содержит `DestinationRule` для `movies-service` и `monolith`: `connectionPool` ограничивает параллельные запросы, а `outlierDetection` исключает из балансировки поды с ошибками 5xx. Лимиты намеренно минимальные, чтобы срабатывание было видно в тесте.
+
+Результат для `movies-service`: из 500 запросов 487 получили код 503, и счётчик `upstream_rq_pending_overflow` тоже равен 487. Именно этот счётчик показывает срабатывания, а `upstream_rq_pending_total` считает запросы, прошедшие через очередь. Для `monolith` код 503 получили 489 запросов. После установки Istio тесты Postman через ingress снова прошли без ошибок.
+
+![Circuit Breaker для movies-service](docs/screenshots/task5-circuit-breaker.png)
+
+![Circuit Breaker для monolith](docs/screenshots/task5-circuit-breaker-monolith.png)
 
 Удаляем все
 ```bash
