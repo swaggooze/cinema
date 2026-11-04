@@ -397,6 +397,11 @@ minikube tunnel
 https://cinemaabyss.example.com/api/movies
 и приложите скриншот развертывания helm и вывода https://cinemaabyss.example.com/api/movies
 
+**Решение.** Заполнены шаблоны [proxy-service.yaml](src/kubernetes/helm/templates/services/proxy-service.yaml) и [events-service.yaml](src/kubernetes/helm/templates/services/events-service.yaml), в `values.yaml` указаны свои образы. Исправлены ошибки, которые мешали работе чарта:
+- `MOVIES_SERVICE_URL` указывал на несуществующий сервис `movies`;
+- в `ConfigMap` не было `EVENTS_SERVICE_URL` и `KAFKA_BROKERS`;
+- Ingress задавал одновременно `ingressClassName` и аннотацию `kubernetes.io/ingress.class`, а Kubernetes такое отклоняет.
+
 
 # Задание 5
 Компания планирует активно развиваться и для повышения надежности, безопасности, реализации сетевых паттернов типа Circuit Breaker и канареечного деплоя вам как архитектору необходимо развернуть istio и настроить circuit breaker для monolith и movies сервисов.
