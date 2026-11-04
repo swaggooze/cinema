@@ -57,6 +57,19 @@
    ```
 - Протестируйте постепенный переход, изменив переменную окружения MOVIES_MIGRATION_PERCENT в файле docker-compose.yml.
 
+**Решение.** Сервис написан на Go: [src/microservices/proxy](src/microservices/proxy).
+
+| Путь | Куда идёт запрос                                                   |
+|---|--------------------------------------------------------------------|
+| `/health` | ответ самого прокси                                                |
+| `/api/events/*` | `events-service`                                                   |
+| `/api/movies/health` | `movies-service` (в монолите такого пути нет)                      |
+| `/api/movies` при `GRADUAL_MIGRATION=true` | `movies-service` с долей `MOVIES_MIGRATION_PERCENT` |
+| `/api/movies` при `GRADUAL_MIGRATION=false` | весь трафик в `movies-service`, как описано в README               |
+| всё остальное | монолит                                                            |
+
+Заголовок ответа `X-Upstream` показывает, какой сервис обработал запрос. Некорректный процент считается нулём, то есть трафик остаётся на монолите.
+
 ### 2. Kafka
  Вам как архитектуру нужно также проверить гипотезу насколько просто реализовать применение Kafka в данной архитектуре.
 
@@ -68,6 +81,25 @@
 
 Необходимые тесты для проверки этого API вызываются при запуске npm run test:local из папки tests/postman 
 Приложите скриншот тестов и скриншот состояния топиков Kafka http://localhost:8090 
+
+**Решение.** Сервис написан на Go с библиотекой Sarama: [src/microservices/events](src/microservices/events). 
+API соответствует `api-specification.yaml`: `POST /api/events/{movie,user,payment}` синхронно публикует событие в топик и возвращает партицию и смещение. 
+Consumer group `events-service` читает те же топики и пишет события в лог. 
+`GET /api/events/health` отвечает `200` только при готовых producer и consumer.
+
+Также изменено:
+- в `docker-compose.yml` монолит и `movies-service` ждут готовности PostgreSQL, потому что при недоступной базе они завершаются сразу при старте;
+- в Dockerfile монолита и `movies-service` копируется `go.sum`, чтобы зависимости проверялись по нему.
+
+Тесты Postman (Docker Compose): 22 запроса, 42 проверки, ошибок нет:
+
+![Тесты Postman](docs/screenshots/task2-postman-tests-1.png)
+
+![Тесты Postman](docs/screenshots/task2-postman-tests-2.png)
+
+![Топики Kafka](docs/screenshots/task2-kafka-topics.png)
+
+![Лог events-service](docs/screenshots/task2-events-log.png)
 
 
 ## Задание 3
