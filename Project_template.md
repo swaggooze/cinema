@@ -322,6 +322,12 @@ cat .docker/config.json | base64
 
 Тесты Postman через ingress: 22 запроса, 42 проверки, ошибок нет.
 
+![Вывод /api/movies](docs/screenshots/task3-k8s-movies.png)
+
+![Лог events-service](docs/screenshots/task3-k8s-events-log.png)
+
+![Тесты Postman в Kubernetes](docs/screenshots/task3-postman-tests.png)
+
 
 ## Задание 4
 Для простоты дальнейшего обновления и развертывания вам как архитектуру необходимо так же реализовать helm-чарты для прокси-сервиса и проверить работу 
