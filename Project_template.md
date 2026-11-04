@@ -152,6 +152,8 @@ jobs:
 Как только сборка отработает и в github registry появятся ваши образы, можно переходить к блоку настройки Kubernetes
 Успешным результатом данного шага является "зеленая" сборка и "зеленые" тесты
 
+**Решение.** В `docker-build-push.yml` и `api-tests.yml` добавлена ветка `cinema`, в `docker-build-push.yml` добавлены сборка и публикация образов `events-service` и `proxy-service`, а перед сборкой запускаются модульные тесты этих сервисов.
+
 
 ### Proxy в Kubernetes
 
@@ -315,6 +317,10 @@ cat .docker/config.json | base64
 
 #### Шаг 3
 Добавьте сюда скриншота вывода при вызове https://cinemaabyss.example.com/api/movies и  скриншот вывода event-service после вызова тестов.
+
+**Решение.** Манифесты: [events-service.yaml](src/kubernetes/events-service.yaml), [proxy-service.yaml](src/kubernetes/proxy-service.yaml), [ingress.yaml](src/kubernetes/ingress.yaml). В `configmap.yaml` добавлены `EVENTS_SERVICE_URL` и `KAFKA_BROKERS`.
+
+Тесты Postman через ingress: 22 запроса, 42 проверки, ошибок нет.
 
 
 ## Задание 4
